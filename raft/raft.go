@@ -260,6 +260,7 @@ type raft struct {
 	state StateType
 
 	// isLearner is true if the local raft node is a learner.
+	// learner是不计入投票的
 	isLearner bool
 
 	votes map[uint64]bool
@@ -817,6 +818,7 @@ func (r *raft) poll(id uint64, t pb.MessageType, v bool) (granted int) {
 	return granted
 }
 
+// Step 就是传说中的状态机了
 func (r *raft) Step(m pb.Message) error {
 	// Handle the message term, which may result in our stepping down to a follower.
 	switch {

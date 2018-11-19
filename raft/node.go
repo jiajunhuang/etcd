@@ -49,6 +49,7 @@ func (a *SoftState) equal(b *SoftState) bool {
 // Ready encapsulates the entries and messages that are ready to read,
 // be saved to stable storage, committed or sent to other peers.
 // All fields in Ready are read-only.
+// Ready是所有准备好被读，被持久化或者被发送的消息的抽象
 type Ready struct {
 	// The current volatile state of a Node.
 	// SoftState will be nil if there is no update.
@@ -126,6 +127,7 @@ func (rd Ready) appliedCursor() uint64 {
 type Node interface {
 	// Tick increments the internal logical clock for the Node by a single tick. Election
 	// timeouts and heartbeat timeouts are in units of ticks.
+	// Tick综合了选举超时和心跳超时
 	Tick()
 	// Campaign causes the Node to transition to candidate state and start campaigning to become leader.
 	Campaign(ctx context.Context) error
@@ -137,6 +139,7 @@ type Node interface {
 	// Application needs to call ApplyConfChange when applying EntryConfChange type entry.
 	ProposeConfChange(ctx context.Context, cc pb.ConfChange) error
 	// Step advances the state machine using the given message. ctx.Err() will be returned, if any.
+	// Step用给定的消息更改状态机
 	Step(ctx context.Context, msg pb.Message) error
 
 	// Ready returns a channel that returns the current point-in-time state.
@@ -144,6 +147,7 @@ type Node interface {
 	//
 	// NOTE: No committed entries from the next Ready may be applied until all committed entries
 	// and snapshots from the previous one have finished.
+	// Ready返回此刻的状态。调用完这个之后一定要调用Advance。
 	Ready() <-chan Ready
 
 	// Advance notifies the Node that the application has saved progress up to the last Ready.
@@ -155,6 +159,7 @@ type Node interface {
 	// commands. For example. when the last Ready contains a snapshot, the application might take
 	// a long time to apply the snapshot data. To continue receiving Ready without blocking raft
 	// progress, it can call Advance before finishing applying the last ready.
+	// 调用这个来告诉节点应用已经更新到最近接受到的Ready
 	Advance()
 	// ApplyConfChange applies config change to the local node.
 	// Returns an opaque ConfState protobuf which must be recorded
