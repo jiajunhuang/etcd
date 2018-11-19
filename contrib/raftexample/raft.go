@@ -103,7 +103,7 @@ func newRaftNode(id int, peers []string, join bool, getSnapshot func() ([]byte, 
 		snapshotterReady: make(chan *snap.Snapshotter, 1),
 		// rest of structure populated after WAL replay
 	}
-	go rc.startRaft()
+	go rc.startRaft() // 启动raft
 	return commitC, errorC, rc.snapshotterReady
 }
 
@@ -283,6 +283,7 @@ func (rc *raftNode) startRaft() {
 		MaxUncommittedEntriesSize: 1 << 30,
 	}
 
+	// 设置 rc.node
 	if oldwal {
 		rc.node = raft.RestartNode(c)
 	} else {
@@ -290,7 +291,7 @@ func (rc *raftNode) startRaft() {
 		if rc.join {
 			startPeers = nil
 		}
-		rc.node = raft.StartNode(c, startPeers)
+		rc.node = raft.StartNode(c, startPeers) // 配置节点
 	}
 
 	rc.transport = &rafthttp.Transport{
@@ -310,8 +311,8 @@ func (rc *raftNode) startRaft() {
 		}
 	}
 
-	go rc.serveRaft()
-	go rc.serveChannels()
+	go rc.serveRaft()     // 启动HTTP服务
+	go rc.serveChannels() // 开始监听各个channel然后消费
 }
 
 // stop closes http, closes all channels, and stops raft.
@@ -378,6 +379,7 @@ func (rc *raftNode) maybeTriggerSnapshot() {
 	rc.snapshotIndex = rc.appliedIndex
 }
 
+// 消费/监听各种channel
 func (rc *raftNode) serveChannels() {
 	snap, err := rc.raftStorage.Snapshot()
 	if err != nil {
@@ -403,6 +405,7 @@ func (rc *raftNode) serveChannels() {
 					rc.proposeC = nil
 				} else {
 					// blocks until accepted by raft state machine
+					// 在此处，是kvstore.go里的kvstore
 					rc.node.Propose(context.TODO(), []byte(prop))
 				}
 
@@ -465,7 +468,7 @@ func (rc *raftNode) serveRaft() {
 		log.Fatalf("raftexample: Failed to listen rafthttp (%v)", err)
 	}
 
-	err = (&http.Server{Handler: rc.transport.Handler()}).Serve(ln)
+	err = (&http.Server{Handler: rc.transport.Handler()}).Serve(ln) // HTTP服务
 	select {
 	case <-rc.httpstopc:
 	default:

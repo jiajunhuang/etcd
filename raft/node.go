@@ -348,6 +348,7 @@ func (n *node) run(r *raft) {
 		// TODO: maybe buffer the config propose if there exists one (the way
 		// described in raft dissertation)
 		// Currently it is dropped in Step silently.
+		// 真正处理消息的地方
 		case pm := <-propc:
 			m := pm.m
 			m.From = r.id
