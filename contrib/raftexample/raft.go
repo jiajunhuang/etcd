@@ -401,6 +401,7 @@ func (rc *raftNode) serveChannels() {
 		for rc.proposeC != nil && rc.confChangeC != nil {
 			select {
 			case prop, ok := <-rc.proposeC:
+				log.Printf("received from rc.proposeC: prop: %+v, ok: %t", prop, ok)
 				if !ok {
 					rc.proposeC = nil
 				} else {

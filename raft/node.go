@@ -17,6 +17,7 @@ package raft
 import (
 	"context"
 	"errors"
+	"log"
 
 	pb "go.etcd.io/etcd/raft/raftpb"
 )
@@ -484,6 +485,7 @@ func (n *node) stepWait(ctx context.Context, m pb.Message) error {
 // Step advances the state machine using msgs. The ctx.Err() will be returned,
 // if any.
 func (n *node) stepWithWaitOption(ctx context.Context, m pb.Message, wait bool) error {
+	log.Printf("raft handling Message: %+v, wait? %t", m, wait)
 	if m.Type != pb.MsgProp {
 		select {
 		case n.recvc <- m:

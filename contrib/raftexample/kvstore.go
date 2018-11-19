@@ -58,6 +58,7 @@ func (s *kvstore) Propose(k string, v string) {
 	if err := gob.NewEncoder(&buf).Encode(kv{k, v}); err != nil {
 		log.Fatal(err)
 	}
+	log.Printf("s.proposeC <- %s", buf.String())
 	s.proposeC <- buf.String()
 }
 
