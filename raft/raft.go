@@ -824,7 +824,7 @@ func (r *raft) Step(m pb.Message) error {
 	switch {
 	case m.Term == 0:
 		// local message
-	case m.Term > r.Term:
+	case m.Term > r.Term: // 如果消息的Term比当前的Term更大
 		if m.Type == pb.MsgVote || m.Type == pb.MsgPreVote {
 			force := bytes.Equal(m.Context, []byte(campaignTransfer))
 			inLease := r.checkQuorum && r.lead != None && r.electionElapsed < r.electionTimeout
@@ -855,7 +855,7 @@ func (r *raft) Step(m pb.Message) error {
 			}
 		}
 
-	case m.Term < r.Term:
+	case m.Term < r.Term: // 如果Term比当前的Term更小
 		if (r.checkQuorum || r.preVote) && (m.Type == pb.MsgHeartbeat || m.Type == pb.MsgApp) {
 			// We have received messages from a leader at a lower term. It is possible
 			// that these messages were simply delayed in the network, but this could
@@ -916,7 +916,7 @@ func (r *raft) Step(m pb.Message) error {
 			r.logger.Debugf("%x ignoring MsgHup because already leader", r.id)
 		}
 
-	case pb.MsgVote, pb.MsgPreVote:
+	case pb.MsgVote, pb.MsgPreVote: // PreVote: https://www.jianshu.com/p/1496228df9a9
 		if r.isLearner {
 			// TODO: learner may need to vote, in case of node down when confchange.
 			r.logger.Infof("%x [logterm: %d, index: %d, vote: %x] ignored %s from %x [logterm: %d, index: %d] at term %d: learner can not vote",
