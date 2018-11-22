@@ -27,6 +27,7 @@ import (
 
 // Repair tries to repair ErrUnexpectedEOF in the
 // last wal file by truncating.
+// 修复WAL文件，检测异常然后截断。
 func Repair(lg *zap.Logger, dirpath string) bool {
 	f, err := openLast(lg, dirpath)
 	if err != nil {

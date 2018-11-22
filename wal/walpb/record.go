@@ -21,6 +21,7 @@ var (
 )
 
 func (rec *Record) Validate(crc uint32) error {
+	// CRC(循环冗余校验码): https://zh.wikipedia.org/wiki/%E5%BE%AA%E7%92%B0%E5%86%97%E9%A4%98%E6%A0%A1%E9%A9%97
 	if rec.Crc == crc {
 		return nil
 	}

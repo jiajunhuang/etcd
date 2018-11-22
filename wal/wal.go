@@ -69,6 +69,7 @@ var (
 // A newly created WAL is in append mode, and ready for appending records.
 // A just opened WAL is in read mode, and ready for reading records.
 // The WAL will be ready for appending after reading out all the previous records.
+// WAL 要么是只读，要么是只写。新创建的WAL是只写的，打开已有的WAL是只读的，但是当全都读完了，就会变成只写。
 type WAL struct {
 	lg *zap.Logger
 
