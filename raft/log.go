@@ -194,6 +194,7 @@ func (l *raftLog) lastIndex() uint64 {
 	return i
 }
 
+// TODO: 没看到持久化的操作啊？
 func (l *raftLog) commitTo(tocommit uint64) {
 	// never decrease commit
 	if l.committed < tocommit {

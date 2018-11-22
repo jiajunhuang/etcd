@@ -55,11 +55,13 @@ type Ready struct {
 	// The current volatile state of a Node.
 	// SoftState will be nil if there is no update.
 	// It is not required to consume or store SoftState.
+	// 当前的状态，不需要被写到硬盘里
 	*SoftState
 
 	// The current state of a Node to be saved to stable storage BEFORE
 	// Messages are sent.
 	// HardState will be equal to empty state if there is no update.
+	// 当前的状态，需要被写入到硬盘里（WAL），而且必须在消息发送之前写入
 	pb.HardState
 
 	// ReadStates can be used for node to serve linearizable read requests locally
@@ -70,14 +72,17 @@ type Ready struct {
 
 	// Entries specifies entries to be saved to stable storage BEFORE
 	// Messages are sent.
+	// 需要被持久化
 	Entries []pb.Entry
 
 	// Snapshot specifies the snapshot to be saved to stable storage.
+	// 需要被持久化的快照
 	Snapshot pb.Snapshot
 
 	// CommittedEntries specifies entries to be committed to a
 	// store/state-machine. These have previously been committed to stable
 	// store.
+	// 已经被持久化但是还没有应用到状态机的消息
 	CommittedEntries []pb.Entry
 
 	// Messages specifies outbound messages to be sent AFTER Entries are
@@ -125,6 +130,7 @@ func (rd Ready) appliedCursor() uint64 {
 }
 
 // Node represents a node in a raft cluster.
+// Node是raft集群里的一个节点，他用来执行一些具体操作，例如发心跳等等。
 type Node interface {
 	// Tick increments the internal logical clock for the Node by a single tick. Election
 	// timeouts and heartbeat timeouts are in units of ticks.
@@ -319,6 +325,7 @@ func (n *node) run(r *raft) {
 	prevHardSt := emptyState
 
 	for {
+		// 暂时还不清楚这个判断是在干啥
 		if advancec != nil {
 			readyc = nil
 		} else {
@@ -330,7 +337,9 @@ func (n *node) run(r *raft) {
 			}
 		}
 
+		// 如果leader变了
 		if lead != r.lead {
+			// 但是有Leader
 			if r.hasLeader() {
 				if lead == None {
 					r.logger.Infof("raft.node: %x elected leader %x at term %d", r.id, r.lead, r.Term)
@@ -349,21 +358,20 @@ func (n *node) run(r *raft) {
 		// TODO: maybe buffer the config propose if there exists one (the way
 		// described in raft dissertation)
 		// Currently it is dropped in Step silently.
-		// 真正处理消息的地方
-		case pm := <-propc:
+		case pm := <-propc: // proposal 是有结果的消息，应该是用来等待是否成功处理的
 			m := pm.m
 			m.From = r.id
-			err := r.Step(m)
+			err := r.Step(m) // 注意，Step 是一个函数，这个函数用来处理消息。但是不同的身份有不同的Step实现，点进去看一下default里的代码，就调用了。参见 raft.go->becomeFollower, raft.go->becomeCandidate等等里的stepXXX函数
 			if pm.result != nil {
 				pm.result <- err
 				close(pm.result)
 			}
-		case m := <-n.recvc:
+		case m := <-n.recvc: // 收到消息，这里的消息应该是不等待结果的
 			// filter out response message from unknown From.
 			if pr := r.getProgress(m.From); pr != nil || !IsResponseMsg(m.Type) {
 				r.Step(m)
 			}
-		case cc := <-n.confc:
+		case cc := <-n.confc: // 配置变更
 			if cc.NodeID == None {
 				select {
 				case n.confstatec <- pb.ConfState{
@@ -395,9 +403,9 @@ func (n *node) run(r *raft) {
 				Learners: r.learnerNodes()}:
 			case <-n.done:
 			}
-		case <-n.tickc:
+		case <-n.tickc: // 心跳和选举的timeout，参见doc.go
 			r.tick()
-		case readyc <- rd:
+		case readyc <- rd: // Ready是各种准备好的变更
 			if rd.SoftState != nil {
 				prevSoftSt = rd.SoftState
 			}
@@ -416,11 +424,11 @@ func (n *node) run(r *raft) {
 				applyingToI = index
 			}
 
-			r.msgs = nil
+			r.msgs = nil // 不是并发安全的啊
 			r.readStates = nil
 			r.reduceUncommittedSize(rd.CommittedEntries)
 			advancec = n.advancec
-		case <-advancec:
+		case <-advancec: // 这个是用来确认Ready已经处理完的
 			if applyingToI != 0 {
 				r.raftLog.appliedTo(applyingToI)
 				applyingToI = 0
@@ -431,9 +439,9 @@ func (n *node) run(r *raft) {
 			}
 			r.raftLog.stableSnapTo(prevSnapi)
 			advancec = nil
-		case c := <-n.status:
+		case c := <-n.status: // TODO: 好像也是状态变更？？？
 			c <- getStatus(r)
-		case <-n.stop:
+		case <-n.stop: // 那就是stop咯
 			close(n.done)
 			return
 		}
@@ -442,6 +450,7 @@ func (n *node) run(r *raft) {
 
 // Tick increments the internal logical clock for this Node. Election timeouts
 // and heartbeat timeouts are in units of ticks.
+// Tick是用来做心跳和选举timeout的
 func (n *node) Tick() {
 	select {
 	case n.tickc <- struct{}{}:
@@ -451,12 +460,15 @@ func (n *node) Tick() {
 	}
 }
 
+// MsgHup是用来选举的
 func (n *node) Campaign(ctx context.Context) error { return n.step(ctx, pb.Message{Type: pb.MsgHup}) }
 
+// 处理需要返回结果的消息
 func (n *node) Propose(ctx context.Context, data []byte) error {
 	return n.stepWait(ctx, pb.Message{Type: pb.MsgProp, Entries: []pb.Entry{{Data: data}}})
 }
 
+// 处理消息，不需要等待的那种
 func (n *node) Step(ctx context.Context, m pb.Message) error {
 	// ignore unexpected local messages receiving over network
 	if IsLocalMsg(m.Type) {
@@ -474,6 +486,7 @@ func (n *node) ProposeConfChange(ctx context.Context, cc pb.ConfChange) error {
 	return n.Step(ctx, pb.Message{Type: pb.MsgProp, Entries: []pb.Entry{{Type: pb.EntryConfChange, Data: data}}})
 }
 
+// 这么多step。。。过度封装了吧。。。都直接调用stepWithWaitOption不就好了？
 func (n *node) step(ctx context.Context, m pb.Message) error {
 	return n.stepWithWaitOption(ctx, m, false)
 }
@@ -503,7 +516,7 @@ func (n *node) stepWithWaitOption(ctx context.Context, m pb.Message, wait bool) 
 	}
 	select {
 	case ch <- pm:
-		if !wait {
+		if !wait { // 如果不需要等待，就直接返回了
 			return nil
 		}
 	case <-ctx.Done():
@@ -512,7 +525,7 @@ func (n *node) stepWithWaitOption(ctx context.Context, m pb.Message, wait bool) 
 		return ErrStopped
 	}
 	select {
-	case rsp := <-pm.result:
+	case rsp := <-pm.result: // 要等待的话，如果result不为空就返回，否则不返回（那就会执行到下面，返回nil）
 		if rsp != nil {
 			return rsp
 		}
@@ -556,6 +569,7 @@ func (n *node) Status() Status {
 	}
 }
 
+// 信息木有送达
 func (n *node) ReportUnreachable(id uint64) {
 	select {
 	case n.recvc <- pb.Message{Type: pb.MsgUnreachable, From: id}:
@@ -563,6 +577,7 @@ func (n *node) ReportUnreachable(id uint64) {
 	}
 }
 
+// 快照状态
 func (n *node) ReportSnapshot(id uint64, status SnapshotStatus) {
 	rej := status == SnapshotFailure
 
@@ -572,6 +587,7 @@ func (n *node) ReportSnapshot(id uint64, status SnapshotStatus) {
 	}
 }
 
+// TODO: 变更leader？
 func (n *node) TransferLeadership(ctx context.Context, lead, transferee uint64) {
 	select {
 	// manually set 'from' and 'to', so that leader can voluntarily transfers its leadership
@@ -581,6 +597,7 @@ func (n *node) TransferLeadership(ctx context.Context, lead, transferee uint64) 
 	}
 }
 
+// TODO
 func (n *node) ReadIndex(ctx context.Context, rctx []byte) error {
 	return n.step(ctx, pb.Message{Type: pb.MsgReadIndex, Entries: []pb.Entry{{Data: rctx}}})
 }

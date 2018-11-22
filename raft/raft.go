@@ -110,19 +110,23 @@ func (st StateType) String() string {
 }
 
 // Config contains the parameters to start a raft.
+// 启动raft集群用的配置
 type Config struct {
 	// ID is the identity of the local raft. ID cannot be 0.
+	// ID是本地raft节点的ID，不能为0
 	ID uint64
 
 	// peers contains the IDs of all nodes (including self) in the raft cluster. It
 	// should only be set when starting a new raft cluster. Restarting raft from
 	// previous configuration will panic if peers is set. peer is private and only
 	// used for testing right now.
+	// 其他节点的ID, TODO: 为什么不用IP之类的？是想和IP解耦吗？毕竟IP会变
 	peers []uint64
 
 	// learners contains the IDs of all learner nodes (including self if the
 	// local node is a learner) in the raft cluster. learners only receives
 	// entries from the leader node. It does not vote or promote itself.
+	// leaders的ID。leader只接受&同步来自leader的消息，不参与投票
 	learners []uint64
 
 	// ElectionTick is the number of Node.Tick invocations that must pass between
@@ -131,21 +135,25 @@ type Config struct {
 	// candidate and start an election. ElectionTick must be greater than
 	// HeartbeatTick. We suggest ElectionTick = 10 * HeartbeatTick to avoid
 	// unnecessary leader switching.
+	// 选举的timeout
 	ElectionTick int
 	// HeartbeatTick is the number of Node.Tick invocations that must pass between
 	// heartbeats. That is, a leader sends heartbeat messages to maintain its
 	// leadership every HeartbeatTick ticks.
+	// 心跳
 	HeartbeatTick int
 
 	// Storage is the storage for raft. raft generates entries and states to be
 	// stored in storage. raft reads the persisted entries and states out of
 	// Storage when it needs. raft reads out the previous state and configuration
 	// out of storage when restarting.
+	// 持久化存储
 	Storage Storage
 	// Applied is the last applied index. It should only be set when restarting
 	// raft. raft will not return entries to the application smaller or equal to
 	// Applied. If Applied is unset when restarting, raft might return previous
 	// applied entries. This is a very application dependent configuration.
+	// 最近变更的位置。只有重启的时候才会变更
 	Applied uint64
 
 	// MaxSizePerMsg limits the max byte size of each append message. Smaller
@@ -153,17 +161,20 @@ type Config struct {
 	// during normal operation). On the other side, it might affect the
 	// throughput during normal replication. Note: math.MaxUint64 for unlimited,
 	// 0 for at most one entry per message.
+	// 消息大小
 	MaxSizePerMsg uint64
 	// MaxUncommittedEntriesSize limits the aggregate byte size of the
 	// uncommitted entries that may be appended to a leader's log. Once this
 	// limit is exceeded, proposals will begin to return ErrProposalDropped
 	// errors. Note: 0 for no limit.
+	// 未提交的消息的大小
 	MaxUncommittedEntriesSize uint64
 	// MaxInflightMsgs limits the max number of in-flight append messages during
 	// optimistic replication phase. The application transportation layer usually
 	// has its own sending buffer over TCP/UDP. Setting MaxInflightMsgs to avoid
 	// overflowing that sending buffer. TODO (xiangli): feedback to application to
 	// limit the proposal rate?
+	// 复制阶段最大的消息数量
 	MaxInflightMsgs int
 
 	// CheckQuorum specifies if the leader should check quorum activity. Leader
@@ -200,9 +211,11 @@ type Config struct {
 	// should be disabled to prevent a follower with an inaccurate hybrid
 	// logical clock from assigning the timestamp and then forwarding the data
 	// to the leader.
+	// 禁止follower转发消息到leader
 	DisableProposalForwarding bool
 }
 
+// 检查配置是否合法
 func (c *Config) validate() error {
 	if c.ID == None {
 		return errors.New("cannot use none as id")
@@ -239,6 +252,7 @@ func (c *Config) validate() error {
 	return nil
 }
 
+// raft 是一个Raft协议的抽象。它主要是包括一些例如当前Term，投票给谁等等诸如此类的东西。
 type raft struct {
 	id uint64
 
@@ -247,7 +261,7 @@ type raft struct {
 
 	readStates []ReadState
 
-	// the log
+	// the log。raft本地的Log
 	raftLog *raftLog
 
 	maxMsgSize         uint64
@@ -318,7 +332,7 @@ func newRaft(c *Config) *raft {
 		panic(err.Error())
 	}
 	raftlog := newLogWithSize(c.Storage, c.Logger, c.MaxSizePerMsg)
-	hs, cs, err := c.Storage.InitialState()
+	hs, cs, err := c.Storage.InitialState() // 从存储恢复
 	if err != nil {
 		panic(err) // TODO(bdarnell)
 	}
@@ -385,8 +399,10 @@ func newRaft(c *Config) *raft {
 
 func (r *raft) hasLeader() bool { return r.lead != None }
 
+// SoftState是指那些不需要持久化的状态
 func (r *raft) softState() *SoftState { return &SoftState{Lead: r.lead, RaftState: r.state} }
 
+// HardState是指需要持久化的状态
 func (r *raft) hardState() pb.HardState {
 	return pb.HardState{
 		Term:   r.Term,
@@ -395,8 +411,10 @@ func (r *raft) hardState() pb.HardState {
 	}
 }
 
+// 应该是计算出需要得到的投票数量，例如，3节点的集群里，这里返回2。
 func (r *raft) quorum() int { return len(r.prs)/2 + 1 }
 
+// 返回集群里所有节点的ID
 func (r *raft) nodes() []uint64 {
 	nodes := make([]uint64, 0, len(r.prs))
 	for id := range r.prs {
@@ -406,6 +424,7 @@ func (r *raft) nodes() []uint64 {
 	return nodes
 }
 
+// 返回所有learner的ID
 func (r *raft) learnerNodes() []uint64 {
 	nodes := make([]uint64, 0, len(r.learnerPrs))
 	for id := range r.learnerPrs {
@@ -416,6 +435,7 @@ func (r *raft) learnerNodes() []uint64 {
 }
 
 // send persists state to stable storage and then sends to its mailbox.
+// TODO: send先持久化，然后发送到mailbox，那么问题来了，mailbox是什么？
 func (r *raft) send(m pb.Message) {
 	m.From = r.id
 	if m.Type == pb.MsgVote || m.Type == pb.MsgVoteResp || m.Type == pb.MsgPreVote || m.Type == pb.MsgPreVoteResp {
@@ -446,9 +466,11 @@ func (r *raft) send(m pb.Message) {
 			m.Term = r.Term
 		}
 	}
+	// TODO: 哪有持久化？？？
 	r.msgs = append(r.msgs, m)
 }
 
+// 返回某个id的进度
 func (r *raft) getProgress(id uint64) *Progress {
 	if pr, ok := r.prs[id]; ok {
 		return pr
@@ -468,6 +490,7 @@ func (r *raft) sendAppend(to uint64) {
 // argument controls whether messages with no entries will be sent
 // ("empty" messages are useful to convey updated Commit indexes, but
 // are undesirable when we're sending multiple messages in a batch).
+// 发送消息到指定的节点
 func (r *raft) maybeSendAppend(to uint64, sendIfEmpty bool) bool {
 	pr := r.getProgress(to)
 	if pr.IsPaused() {
@@ -549,6 +572,7 @@ func (r *raft) sendHeartbeat(to uint64, ctx []byte) {
 	r.send(m)
 }
 
+// 对每个进度表做一件事儿
 func (r *raft) forEachProgress(f func(id uint64, pr *Progress)) {
 	for id, pr := range r.prs {
 		f(id, pr)
@@ -561,9 +585,10 @@ func (r *raft) forEachProgress(f func(id uint64, pr *Progress)) {
 
 // bcastAppend sends RPC, with entries to all peers that are not up-to-date
 // according to the progress recorded in r.prs.
+// 广播
 func (r *raft) bcastAppend() {
 	r.forEachProgress(func(id uint64, _ *Progress) {
-		if id == r.id {
+		if id == r.id { // 自己的就不发了
 			return
 		}
 
@@ -572,6 +597,7 @@ func (r *raft) bcastAppend() {
 }
 
 // bcastHeartbeat sends RPC, without entries to all the peers.
+// 广播心跳
 func (r *raft) bcastHeartbeat() {
 	lastCtx := r.readOnly.lastPendingRequestCtx()
 	if len(lastCtx) == 0 {
@@ -593,6 +619,7 @@ func (r *raft) bcastHeartbeatWithCtx(ctx []byte) {
 // maybeCommit attempts to advance the commit index. Returns true if
 // the commit index changed (in which case the caller should call
 // r.bcastAppend).
+// 尝试提交
 func (r *raft) maybeCommit() bool {
 	// Preserving matchBuf across calls is an optimization
 	// used to avoid allocating a new slice on each call.
@@ -610,6 +637,7 @@ func (r *raft) maybeCommit() bool {
 	return r.raftLog.maybeCommit(mci, r.Term)
 }
 
+// 重置
 func (r *raft) reset(term uint64) {
 	if r.Term != term {
 		r.Term = term
@@ -636,6 +664,7 @@ func (r *raft) reset(term uint64) {
 	r.readOnly = newReadOnly(r.readOnly.option)
 }
 
+// 增加
 func (r *raft) appendEntry(es ...pb.Entry) (accepted bool) {
 	li := r.raftLog.lastIndex()
 	for i := range es {
@@ -776,6 +805,7 @@ func (r *raft) campaign(t CampaignType) {
 		voteMsg = pb.MsgVote
 		term = r.Term
 	}
+	// 检查投票
 	if r.quorum() == r.poll(r.id, voteRespMsgType(voteMsg), true) {
 		// We won the election after voting for ourselves (which must mean that
 		// this is a single-node cluster). Advance to the next state.
@@ -797,6 +827,7 @@ func (r *raft) campaign(t CampaignType) {
 		if t == campaignTransfer {
 			ctx = []byte(t)
 		}
+		// to, 给我投一票吧！
 		r.send(pb.Message{Term: term, To: id, Type: voteMsg, Index: r.raftLog.lastIndex(), LogTerm: r.raftLog.lastTerm(), Context: ctx})
 	}
 }
@@ -907,6 +938,7 @@ func (r *raft) Step(m pb.Message) error {
 			}
 
 			r.logger.Infof("%x is starting a new election at term %d", r.id, r.Term)
+			// 发起投票
 			if r.preVote {
 				r.campaign(campaignPreElection)
 			} else {
@@ -916,7 +948,7 @@ func (r *raft) Step(m pb.Message) error {
 			r.logger.Debugf("%x ignoring MsgHup because already leader", r.id)
 		}
 
-	case pb.MsgVote, pb.MsgPreVote: // PreVote: https://www.jianshu.com/p/1496228df9a9
+	case pb.MsgVote, pb.MsgPreVote: // PreVote: https://www.jianshu.com/p/1496228df9a9 收到投票
 		if r.isLearner {
 			// TODO: learner may need to vote, in case of node down when confchange.
 			r.logger.Infof("%x [logterm: %d, index: %d, vote: %x] ignored %s from %x [logterm: %d, index: %d] at term %d: learner can not vote",
@@ -1228,6 +1260,7 @@ func stepCandidate(r *raft, m pb.Message) error {
 	return nil
 }
 
+// Follower收到消息做的事情
 func stepFollower(r *raft, m pb.Message) error {
 	switch m.Type {
 	case pb.MsgProp:
@@ -1321,6 +1354,7 @@ func (r *raft) handleSnapshot(m pb.Message) {
 
 // restore recovers the state machine from a snapshot. It restores the log and the
 // configuration of state machine.
+// 从快照恢复
 func (r *raft) restore(s pb.Snapshot) bool {
 	if s.Metadata.Index <= r.raftLog.committed {
 		return false

@@ -34,6 +34,7 @@ func (st ProgressStateType) String() string { return prstmap[uint64(st)] }
 
 // Progress represents a follower’s progress in the view of the leader. Leader maintains
 // progresses of all followers, and sends entries to the follower based on its progress.
+// 以leader的视角，follower和leader之间同步差异
 type Progress struct {
 	Match, Next uint64
 	// State defines how the leader should interact with the follower.
