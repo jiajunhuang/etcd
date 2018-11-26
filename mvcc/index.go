@@ -39,7 +39,7 @@ type index interface {
 
 type treeIndex struct {
 	sync.RWMutex
-	tree *btree.BTree
+	tree *btree.BTree // B树实现，纯内存版本
 	lg   *zap.Logger
 }
 
@@ -51,7 +51,7 @@ func newTreeIndex(lg *zap.Logger) index {
 }
 
 func (ti *treeIndex) Put(key []byte, rev revision) {
-	keyi := &keyIndex{key: key}
+	keyi := &keyIndex{key: key} // keyi = key index，这都什么鬼缩写
 
 	ti.Lock()
 	defer ti.Unlock()

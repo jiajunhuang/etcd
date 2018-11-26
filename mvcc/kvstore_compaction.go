@@ -21,6 +21,7 @@ import (
 	"go.uber.org/zap"
 )
 
+// 定期进行compaction
 func (s *store) scheduleCompaction(compactMainRev int64, keep map[revision]struct{}) bool {
 	totalStart := time.Now()
 	defer dbCompactionTotalMs.Observe(float64(time.Since(totalStart) / time.Millisecond))
