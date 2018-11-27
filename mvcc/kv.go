@@ -36,10 +36,10 @@ type ReadView interface {
 	// FirstRev returns the first KV revision at the time of opening the txn.
 	// After a compaction, the first revision increases to the compaction
 	// revision.
-	FirstRev() int64
+	FirstRev() int64 // 返回第一个revision
 
 	// Rev returns the revision of the KV at the time of opening the txn.
-	Rev() int64
+	Rev() int64 // 返回开启transaction时的revision
 
 	// Range gets the keys in the range at rangeRev.
 	// The returned rev is the current revision of the KV when the operation is executed.

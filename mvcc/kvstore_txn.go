@@ -59,6 +59,7 @@ type storeTxnWrite struct {
 	changes  []mvccpb.KeyValue
 }
 
+// 哇好绕啊，又绕到这里来了，我是佩服的
 func (s *store) Write() TxnWrite {
 	s.mu.RLock()
 	tx := s.b.BatchTx()
@@ -89,6 +90,7 @@ func (tw *storeTxnWrite) DeleteRange(key, end []byte) (int64, int64) {
 	return 0, tw.beginRev
 }
 
+// 这里是etcdctl put foo bar最重要掉用到的地方
 func (tw *storeTxnWrite) Put(key, value []byte, lease lease.LeaseID) int64 {
 	tw.put(key, value, lease)
 	return tw.beginRev + 1
@@ -164,6 +166,7 @@ func (tr *storeTxnRead) rangeKeys(key, end []byte, curRev int64, ro RangeOptions
 	return &RangeResult{KVs: kvs, Count: len(revpairs), Rev: curRev}, nil
 }
 
+// etcdctl put foo bar最后到了这里
 func (tw *storeTxnWrite) put(key, value []byte, leaseID lease.LeaseID) {
 	rev := tw.beginRev + 1
 	c := rev
@@ -177,7 +180,7 @@ func (tw *storeTxnWrite) put(key, value []byte, leaseID lease.LeaseID) {
 		oldLease = tw.s.le.GetLease(lease.LeaseItem{Key: string(key)})
 	}
 
-	ibytes := newRevBytes()
+	ibytes := newRevBytes() // revision的bytes
 	idxRev := revision{main: rev, sub: int64(len(tw.changes))}
 	revToBytes(idxRev, ibytes)
 
@@ -191,7 +194,7 @@ func (tw *storeTxnWrite) put(key, value []byte, leaseID lease.LeaseID) {
 		Lease:          int64(leaseID),
 	}
 
-	d, err := kv.Marshal()
+	d, err := kv.Marshal() // kv的bytes
 	if err != nil {
 		if tw.storeTxnRead.s.lg != nil {
 			tw.storeTxnRead.s.lg.Fatal(
@@ -203,7 +206,7 @@ func (tw *storeTxnWrite) put(key, value []byte, leaseID lease.LeaseID) {
 		}
 	}
 
-	tw.tx.UnsafeSeqPut(keyBucketName, ibytes, d)
+	tw.tx.UnsafeSeqPut(keyBucketName, ibytes, d) // 所以最后存储的，以revision为key，kv为value存储下来了
 	tw.s.kvindex.Put(key, idxRev)
 	tw.changes = append(tw.changes, kv)
 
